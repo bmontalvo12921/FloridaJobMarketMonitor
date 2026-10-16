@@ -36,14 +36,40 @@ public class JobMarketCollector {
     // MYSQL DATABASE SETTINGS
     // ==========================================
 
-    private static final String DATABASE_URL =
-            "jdbc:mysql://localhost:3306/job_market";
+    private static final String DATABASE_URL = databaseUrl();
 
     private static final String DATABASE_USER =
-            System.getenv("MYSQL_USER");
+            envOrFallback("MYSQLUSER", "MYSQL_USER");
 
     private static final String DATABASE_PASSWORD =
-            System.getenv("MYSQL_PASSWORD");
+            envOrFallback("MYSQLPASSWORD", "MYSQL_PASSWORD");
+
+    private static String databaseUrl() {
+        String host = System.getenv("MYSQLHOST");
+        String port = System.getenv("MYSQLPORT");
+        String database = System.getenv("MYSQLDATABASE");
+
+        if (host == null || host.isBlank()) {
+            return "jdbc:mysql://localhost:3306/job_market";
+        }
+        if (port == null || port.isBlank()) {
+            port = "3306";
+        }
+        if (database == null || database.isBlank()) {
+            database = "railway";
+        }
+
+        return "jdbc:mysql://" + host + ":" + port + "/" + database
+                + "?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
+    }
+
+    private static String envOrFallback(String primaryName, String fallbackName) {
+        String value = System.getenv(primaryName);
+        if (value == null || value.isBlank()) {
+            value = System.getenv(fallbackName);
+        }
+        return value;
+    }
 
 
     // ==========================================
@@ -78,6 +104,7 @@ public class JobMarketCollector {
             System.out.println();
             System.out.println("An error occurred:");
             System.out.println(e.getMessage());
+            System.exit(1);
         }
     }
 
@@ -105,14 +132,14 @@ public class JobMarketCollector {
         if (DATABASE_USER == null || DATABASE_USER.isBlank()) {
 
             throw new IllegalStateException(
-                    "MYSQL_USER environment variable is missing."
+                    "MYSQLUSER (or MYSQL_USER) environment variable is missing."
             );
         }
 
         if (DATABASE_PASSWORD == null) {
 
             throw new IllegalStateException(
-                    "MYSQL_PASSWORD environment variable is missing."
+                    "MYSQLPASSWORD (or MYSQL_PASSWORD) environment variable is missing."
             );
         }
     }
@@ -305,7 +332,9 @@ public class JobMarketCollector {
                         + "&app_key=" + APP_KEY
                         + "&results_per_page=50"
                         + "&what=" + what
-                        + "&where=" + where;
+                        + "&where=" + where
+                        + "&sort_by=date"
+                        + "&sort_dir=down";
 
 
         System.out.println(
