@@ -328,13 +328,13 @@ public class JobMarketCollector {
         String url =
                 API_URL
                         + "/jobs/us/search/1"
-                        + "?app_id=" + APP_ID
-                        + "&app_key=" + APP_KEY
+                        + "?app_id=" + URLEncoder.encode(APP_ID, StandardCharsets.UTF_8)
+                        + "&app_key=" + URLEncoder.encode(APP_KEY, StandardCharsets.UTF_8)
                         + "&results_per_page=50"
                         + "&what=" + what
                         + "&where=" + where
                         + "&sort_by=date"
-                        + "&sort_dir=down"
+                        + ""
                         + "&content-type=application/json";
 
 
