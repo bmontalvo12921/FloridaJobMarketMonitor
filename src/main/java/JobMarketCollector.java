@@ -207,6 +207,11 @@ public class JobMarketCollector {
             // This also works if the jobs table already existed.
             ensureEducationColumns(connection);
 
+            try (PreparedStatement descriptionColumn = connection.prepareStatement("ALTER TABLE jobs MODIFY COLUMN description TEXT")) {
+                descriptionColumn.executeUpdate();
+            }
+
+
             snapshotsStatement.executeUpdate();
 
             System.out.println("MySQL database tables ready.");
