@@ -14,6 +14,10 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.Locale;
+import java.io.ByteArrayInputStream;
+import java.util.Base64;
+import java.util.zip.GZIPInputStream;
+
 
 
 public class JobMarketCollector {
@@ -89,6 +93,9 @@ public class JobMarketCollector {
 
             createTables();
 
+            importBackupIfConfigured();
+
+
             String json = getJobsFromAdzuna();
 
             saveJobs(json);
@@ -113,7 +120,66 @@ public class JobMarketCollector {
     // CHECK CREDENTIALS
     // ==========================================
 
-    private static void checkCredentials() {
+        private static void importBackupIfConfigured() throws Exception {
+        StringBuilder encoded = new StringBuilder();
+        for (int i = 1; i <= 4; i++) {
+            String part = System.getenv("BACKUP_SQL_GZIP_B64_" + i);
+            if (part != null) encoded.append(part);
+        }
+        if (encoded.length() == 0) return;
+
+        byte[] compressed = Base64.getDecoder().decode(encoded.toString());
+        String sql;
+        try (GZIPInputStream gzip = new GZIPInputStream(new ByteArrayInputStream(compressed))) {
+            sql = new String(gzip.readAllBytes(), StandardCharsets.UTF_8);
+        }
+
+        java.util.List<String> statements = splitSqlStatements(sql);
+        int jobsInserted;
+        int snapshotsInserted;
+        try (Connection connection = DriverManager.getConnection(DATABASE_URL, DATABASE_USER, DATABASE_PASSWORD);
+             java.sql.Statement statement = connection.createStatement()) {
+            connection.setAutoCommit(false);
+            jobsInserted = executeBackupInserts(statement, statements, "jobs");
+            snapshotsInserted = executeBackupInserts(statement, statements, "job_snapshots");
+            connection.commit();
+        }
+        System.out.println("Backup merged safely: " + jobsInserted + " new jobs, " + snapshotsInserted + " new snapshots.");
+    }
+
+    private static int executeBackupInserts(java.sql.Statement statement, java.util.List<String> statements, String table) throws SQLException {
+        int inserted = 0;
+        String prefix = "INSERT INTO " + (char) 96 + table + (char) 96;
+        for (String sql : statements) {
+            String normalized = sql.stripLeading();
+            if (normalized.regionMatches(true, 0, prefix, 0, prefix.length())) {
+                inserted += statement.executeUpdate(normalized.replaceFirst("(?i)^INSERT\\s+INTO", "INSERT IGNORE INTO"));
+            }
+        }
+        return inserted;
+    }
+
+    private static java.util.List<String> splitSqlStatements(String sql) {
+        java.util.List<String> statements = new java.util.ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean single = false, doubled = false, backtick = false, escaped = false;
+        for (int i = 0; i < sql.length(); i++) {
+            char c = sql.charAt(i);
+            if (escaped) { current.append(c); escaped = false; continue; }
+            if (c == '\\' && (single || doubled)) { current.append(c); escaped = true; continue; }
+            if (c == '\'' && !doubled && !backtick) single = !single;
+            else if (c == '"' && !single && !backtick) doubled = !doubled;
+            else if (c == 96 && !single && !doubled) backtick = !backtick;
+            if (c == ';' && !single && !doubled && !backtick) {
+                if (!current.toString().isBlank()) statements.add(current.toString());
+                current.setLength(0);
+            } else current.append(c);
+        }
+        if (!current.toString().isBlank()) statements.add(current.toString());
+        return statements;
+    }
+
+private static void checkCredentials() {
 
         if (APP_ID == null || APP_ID.isBlank()) {
 
