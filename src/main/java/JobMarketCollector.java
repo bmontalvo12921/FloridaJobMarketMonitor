@@ -334,7 +334,8 @@ public class JobMarketCollector {
                         + "&what=" + what
                         + "&where=" + where
                         + "&sort_by=date"
-                        + "&sort_dir=down";
+                        + "&sort_dir=down"
+                        + "&content-type=application/json";
 
 
         System.out.println(
@@ -937,3 +938,4 @@ public class JobMarketCollector {
         return "Not Specified";
     }
 }
+
