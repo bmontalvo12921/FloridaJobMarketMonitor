@@ -144,7 +144,7 @@ public class JobMarketCollector {
             snapshotsInserted = executeBackupInserts(statement, statements, "job_snapshots");
             connection.commit();
         }
-        System.out.println("Backup merged safely: " + jobsInserted + " new jobs, " + snapshotsInserted + " new snapshots.");
+        System.out.println("Backup merged safely: " + jobsInserted + " job rows inserted/repaired, " + snapshotsInserted + " new snapshots.");
     }
 
     private static int executeBackupInserts(java.sql.Statement statement, java.util.List<String> statements, String table) throws SQLException {
@@ -153,10 +153,56 @@ public class JobMarketCollector {
         for (String sql : statements) {
             String normalized = sql.stripLeading();
             if (normalized.regionMatches(true, 0, prefix, 0, prefix.length())) {
-                inserted += statement.executeUpdate(normalized.replaceFirst("(?i)^INSERT\\s+INTO", "INSERT IGNORE INTO"));
+                if ("jobs".equals(table)) {
+                    inserted += repairBackupJobInsert(statement, normalized);
+                } else {
+                    inserted += statement.executeUpdate(normalized.replaceFirst("(?i)^INSERT\\s+INTO", "INSERT IGNORE INTO"));
+                }
             }
         }
         return inserted;
+    }
+
+    private static int repairBackupJobInsert(java.sql.Statement statement, String sql) throws SQLException {
+        int valuesIndex = sql.toUpperCase(Locale.ROOT).indexOf("VALUES");
+        if (valuesIndex < 0) {
+            throw new SQLException("Backup jobs INSERT has no VALUES clause.");
+        }
+
+        String values = sql.substring(valuesIndex + "VALUES".length()).strip();
+        if (values.endsWith(";")) {
+            values = values.substring(0, values.length() - 1).stripTrailing();
+        }
+
+        String columns = "job_id, title, company, location, category, salary_min, salary_max, "
+                + "salary_predicted, contract_type, contract_time, description, job_url, created, "
+                + "education_level, education_requirement";
+        String damagedRow = "(title IS NULL OR TRIM(title) = '' OR title = 'Not Specified' "
+                + "OR (location IS NOT NULL AND CHAR_LENGTH(location) > 80 "
+                + "AND LEFT(VALUES(description), CHAR_LENGTH(location)) = location))";
+        String[] updateColumns = {
+                "title", "company", "category", "salary_min", "salary_max",
+                "salary_predicted", "contract_type", "contract_time", "description",
+                "job_url", "created", "education_level", "education_requirement", "location"
+        };
+
+        StringBuilder upsert = new StringBuilder("INSERT INTO jobs (")
+                .append(columns)
+                .append(") VALUES ")
+                .append(values)
+                .append(" ON DUPLICATE KEY UPDATE ");
+
+        for (int i = 0; i < updateColumns.length; i++) {
+            if (i > 0) {
+                upsert.append(", ");
+            }
+            String column = updateColumns[i];
+            upsert.append(column).append(" = IF(")
+                    .append(damagedRow).append(", VALUES(")
+                    .append(column).append("), ").append(column).append(")");
+        }
+
+        return statement.executeUpdate(upsert.toString());
     }
 
     private static java.util.List<String> splitSqlStatements(String sql) {
